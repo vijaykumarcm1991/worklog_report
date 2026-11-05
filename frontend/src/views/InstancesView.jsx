@@ -77,9 +77,17 @@ export default function InstancesView() {
 
   const remove = async (inst) => {
     if (!confirm(`Delete instance "${inst.name}"? This also removes its saved users and worklogs.`)) return
-    await api.deleteInstance(inst.id)
-    if (editing === inst.id) resetForm()
-    await load()
+    setMsg('')
+    try {
+      await api.deleteInstance(inst.id)
+      if (editing === inst.id) {
+        resetForm()
+        setShowForm(false)
+      }
+      await load()
+    } catch (err) {
+      setMsg(err.message)
+    }
   }
 
   const testConn = async (inst) => {
@@ -100,7 +108,16 @@ export default function InstancesView() {
           <h1 className="page-title">Instances</h1>
           <p className="mt-1 text-sm text-slate-400">Configure your Jira Cloud and on-prem Server/DC connections</p>
         </div>
-        <button className="btn-primary" onClick={() => { resetForm(); setShowForm((s) => !s) }}>
+        <button
+          className="btn-primary"
+          onClick={() => {
+            // While editing, this switches to a blank "new instance" form
+            // instead of closing it; it only closes an open add form.
+            const closing = showForm && !editing
+            resetForm()
+            setShowForm(!closing)
+          }}
+        >
           {icons.plus} {showForm && !editing ? 'Cancel' : 'Add instance'}
         </button>
       </div>

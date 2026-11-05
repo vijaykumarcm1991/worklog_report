@@ -1,6 +1,4 @@
 """SQLAlchemy models."""
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     Column,
@@ -13,6 +11,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
+from .timeutil import now_ist
+
 
 class Base(DeclarativeBase):
     pass
@@ -22,6 +22,7 @@ class Instance(Base):
     """A configured Jira instance (either cloud or on-prem)."""
 
     __tablename__ = "instances"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
@@ -37,7 +38,7 @@ class Instance(Base):
     label = Column(String, default="")
     days_to_fetch = Column(Integer, default=30)
     enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_ist)
 
 
 class User(Base):
@@ -46,6 +47,7 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("instance_id", "user_key", name="uq_user_instance_key"),
+        {"sqlite_autoincrement": True},
     )
 
     id = Column(Integer, primary_key=True)
@@ -57,7 +59,7 @@ class User(Base):
     avatar_url = Column(String, default="")
     # Whether this user is selected/active for the calendar
     selected = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_ist)
 
 
 class Worklog(Base):
@@ -76,7 +78,7 @@ class Worklog(Base):
     seconds = Column(Integer, nullable=False, default=0)
     comment = Column(Text, default="")
     issue_key = Column(String, default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_ist)
 
 
 class ConfigEntry(Base):

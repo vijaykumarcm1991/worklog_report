@@ -67,26 +67,31 @@ def get_calendar(
     per_day: dict[str, int] = {}
     per_user: dict[int, dict[str, int]] = {}
     for uid, day, seconds in rows:
+        # SQLite returns 'YYYY-MM-DD'; other databases return a date object.
+        day = day if isinstance(day, str) else day.strftime("%Y-%m-%d")
         seconds = int(seconds or 0)
         per_day[day] = per_day.get(day, 0) + seconds
         per_user.setdefault(uid, {})[day] = seconds
 
-    def _status(seconds: int) -> tuple[float, str]:
+    def _status(seconds: int, target: float) -> tuple[float, str]:
         hours = round(seconds / 3600.0, 2)
         if seconds == 0:
             return hours, "none"
-        if hours < target_hours * 0.95:
+        if hours < target * 0.95:
             return hours, "under"
-        if hours <= target_hours * 1.05:
+        if hours <= target * 1.05:
             return hours, "ok"
         return hours, "over"
+
+    # The consolidated row sums every selected user, so its target does too.
+    combined_target = target_hours * max(len(selected_users), 1)
 
     user_calendars: list[schemas.UserCalendar] = []
     for u in selected_users:
         udays = []
         for day in sorted(per_user.get(u.id, {})):
             secs = per_user[u.id][day]
-            hours, status = _status(secs)
+            hours, status = _status(secs, target_hours)
             udays.append(
                 schemas.WorklogDay(date=day, seconds=secs, hours=hours, target_hours=target_hours, status=status)
             )
@@ -94,7 +99,7 @@ def get_calendar(
             schemas.UserCalendar(
                 user=_to_saved(u),
                 instance_name=instances[u.instance_id].name,
-                total_hours=round(sum(d.hours for d in udays), 2),
+                total_hours=round(sum(d.seconds for d in udays) / 3600.0, 2),
                 days=udays,
             )
         )
@@ -104,19 +109,19 @@ def get_calendar(
     while cursor <= end_dt:
         day_str = cursor.strftime("%Y-%m-%d")
         seconds = per_day.get(day_str, 0)
-        hours, status = _status(seconds)
+        hours, status = _status(seconds, combined_target)
         days.append(
             schemas.WorklogDay(
                 date=day_str,
                 seconds=seconds,
                 hours=hours,
-                target_hours=target_hours,
+                target_hours=combined_target,
                 status=status,
             )
         )
         cursor += timedelta(days=1)
 
-    total_hours = round(sum(d.hours for d in days), 2)
+    total_hours = round(sum(d.seconds for d in days) / 3600.0, 2)
 
     return schemas.CalendarResponse(
         daily_target_hours=target_hours,

@@ -8,32 +8,45 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------------- Instances ----------------
 
 
+INSTANCE_TYPE_PATTERN = "^(cloud|onprem)$"
+
+
 class InstanceBase(BaseModel):
-    name: str
-    instance_type: str = Field(..., pattern="^(cloud|onprem)$")
-    base_url: str
-    username: str
+    name: str = Field(..., min_length=1)
+    instance_type: str = Field(..., pattern=INSTANCE_TYPE_PATTERN)
+    base_url: str = Field(..., min_length=1)
+    username: str = Field(..., min_length=1)
     label: str = ""
-    days_to_fetch: int = 30
+    days_to_fetch: int = Field(30, ge=1, le=365)
     enabled: bool = True
 
 
 class InstanceCreate(InstanceBase):
-    token: str
+    token: str = Field(..., min_length=1)
 
 
 class InstanceUpdate(BaseModel):
-    name: Optional[str] = None
-    instance_type: Optional[str] = None
-    base_url: Optional[str] = None
-    username: Optional[str] = None
+    """Partial update. Fields left out (or sent as null) are not changed."""
+
+    name: Optional[str] = Field(None, min_length=1)
+    instance_type: Optional[str] = Field(None, pattern=INSTANCE_TYPE_PATTERN)
+    base_url: Optional[str] = Field(None, min_length=1)
+    username: Optional[str] = Field(None, min_length=1)
     token: Optional[str] = None
     label: Optional[str] = None
-    days_to_fetch: Optional[int] = None
+    days_to_fetch: Optional[int] = Field(None, ge=1, le=365)
     enabled: Optional[bool] = None
 
 
-class InstanceRead(InstanceBase):
+class InstanceRead(BaseModel):
+    # Stored rows are returned as-is, without the create-time constraints.
+    name: str
+    instance_type: str
+    base_url: str
+    username: str
+    label: Optional[str] = ""
+    days_to_fetch: Optional[int] = 30
+    enabled: bool = True
     id: int
     # True if a token is stored (never returned itself)
     has_credential: bool

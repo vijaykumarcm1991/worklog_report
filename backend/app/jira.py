@@ -11,17 +11,20 @@ instance type. Key differences handled here:
 from __future__ import annotations
 
 import base64
+import re
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import httpx
 
 from .models import Instance
+from .timeutil import now_ist
 
 
 class JiraAuthError(Exception):
-    """Authentication or not-found failure contacting the instance."""
+    """Failure contacting the instance: bad credentials, wrong URL, or a
+    response that isn't the Jira REST API (e.g. an SSO login page)."""
 
 
 class JiraClient(ABC):
@@ -66,7 +69,13 @@ class JiraClient(ABC):
                 "The Jira search API has changed; update the backend."
             )
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise JiraAuthError(
+                f"{self.instance.name} returned a non-JSON response (HTTP {resp.status_code}). "
+                "Check the base URL; an SSO/login page or proxy may be answering instead of Jira."
+            ) from exc
 
     def _get(self, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return self._request("GET", url, params=params)
@@ -160,7 +169,7 @@ class JiraCloudClient(JiraClient):
     # -- worklogs ------------------------------------------------------------
     def fetch_worklogs(self, user_key: str, since: datetime) -> list[dict]:
         since_str = since.strftime("%Y-%m-%d")
-        until_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        until_str = now_ist().strftime("%Y-%m-%d")
         jql = (
             f'worklogAuthor = "{_jql_quote(user_key)}" '
             f'AND worklogDate >= "{since_str}" AND worklogDate <= "{until_str}"'
@@ -250,12 +259,13 @@ class JiraOnPremClient(JiraClient):
     # -- worklogs ------------------------------------------------------------
     def fetch_worklogs(self, user_key: str, since: datetime) -> list[dict]:
         since_str = since.strftime("%Y-%m-%d")
-        until_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        # On-prem identify the author by 'name' (username)
+        until_str = now_ist().strftime("%Y-%m-%d")
+        # On-prem identify the author by 'name' (username). Order by issue key
+        # so offset pagination is stable (no issue repeated or skipped).
         jql = (
             f'worklogAuthor = "{_jql_quote(user_key)}" '
             f'AND worklogDate >= "{since_str}" AND worklogDate <= "{until_str}" '
-            f"ORDER BY worklogDate ASC"
+            f"ORDER BY key ASC"
         )
         out: list[dict] = []
         start = 0
@@ -326,21 +336,17 @@ def _comment_text(comment: Any) -> str:
 
 
 def _parse_iso(value: str) -> datetime:
-    """Parse Jira ISO-8601 timestamps (which carry a timezone, e.g. +0000)."""
-    import re
+    """Parse a Jira timestamp such as "2024-01-15T10:00:00.000+0530".
 
-    # Jira timestamps may end in "+0000" (cloud) or "+11:00" style offsets, or "Z".
-    def normalize(v: str) -> str:
-        v = v.replace("Z", "+00:00")
-        m = re.search(r"([+-])(\d{2})(\d{2})$", v)
-        if m and ":" not in v[-6:-3]:
-            return f"{v[: m.start()]}{m.group(1)}{m.group(2)}:{m.group(3)}"
-        return v
-
-    dt = datetime.fromisoformat(normalize(value.strip()))
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    Both instances are IST, so the wall-clock time Jira reports is kept as-is:
+    the offset is dropped, never converted.
+    """
+    v = value.strip()
+    if v.endswith("Z"):
+        v = v[:-1]
+    else:
+        v = re.sub(r"[+-]\d{2}:?\d{2}$", "", v)
+    return datetime.fromisoformat(v).replace(tzinfo=None)
 
 
 def make_client(instance: Instance, token: str) -> JiraClient:

@@ -9,13 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import SessionLocal, init_db
 from .routes import api_router
-from .service import sync_all
+from .service import ensure_default_config, sync_all
+from .timeutil import IST
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("worklog")
 
 settings = get_settings()
-scheduler = BackgroundScheduler(timezone="UTC")
+scheduler = BackgroundScheduler(timezone=IST)
 
 
 def _scheduled_sync() -> None:
@@ -37,9 +38,7 @@ async def lifespan(app: FastAPI):
     # Seed default daily hours if not present
     db = SessionLocal()
     try:
-        from .service import get_default_daily_hours
-
-        get_default_daily_hours(db)  # ensures creation on read? no-op ensure
+        ensure_default_config(db)
     finally:
         db.close()
 

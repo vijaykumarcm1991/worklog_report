@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import icons from '../icons.jsx'
@@ -27,6 +27,19 @@ const STATUS_TEXT = {
 const pad = (n) => String(n).padStart(2, '0')
 const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
+// Today's date in IST, whatever timezone the browser is in. Returned as a
+// plain local Date for that calendar day (used only for its y/m/d).
+function istToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const get = (t) => Number(parts.find((p) => p.type === t).value)
+  return new Date(get('year'), get('month') - 1, get('day'))
+}
+
 function readPref(key) {
   try {
     return localStorage.getItem(key) || ''
@@ -43,7 +56,8 @@ function writePref(key, value) {
 }
 
 export default function CalendarView() {
-  const [today] = useState(() => new Date())
+  const [today] = useState(istToday)
+  const requestSeq = useRef(0)
   const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [instanceId, setInstanceId] = useState(() => readPref('wl.instance'))
   const [data, setData] = useState(null)
@@ -54,17 +68,20 @@ export default function CalendarView() {
   const [syncResult, setSyncResult] = useState(null)
 
   const fetchCalendar = useCallback(async (m, instId) => {
+    // Only the latest request may update state; a slow earlier response
+    // (e.g. after clicking through months quickly) is discarded.
+    const seq = ++requestSeq.current
     setLoading(true)
     setError('')
     const start = new Date(m.getFullYear(), m.getMonth(), 1)
     const end = new Date(m.getFullYear(), m.getMonth() + 1, 0)
     try {
       const d = await api.calendar(dateKey(start), dateKey(end), instId)
-      setData(d)
+      if (seq === requestSeq.current) setData(d)
     } catch (e) {
-      setError(e.message)
+      if (seq === requestSeq.current) setError(e.message)
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
   }, [])
 
@@ -85,13 +102,13 @@ export default function CalendarView() {
     setHidden(new Set())
   }
 
-  const users = data?.users || []
+  const users = useMemo(() => data?.users || [], [data])
   const colorOf = useMemo(() => {
     const map = {}
     users.forEach((u, i) => (map[u.user.id] = USER_COLORS[i % USER_COLORS.length]))
     return map
   }, [users])
-  const visibleUsers = users.filter((u) => !hidden.has(u.user.id))
+  const visibleUsers = useMemo(() => users.filter((u) => !hidden.has(u.user.id)), [users, hidden])
 
   // date -> [{user, day}] for visible users only
   const byDate = useMemo(() => {

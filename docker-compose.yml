@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      # Everything runs on IST (both Jira instances are IST)
+      - TZ=Asia/Kolkata
       # Required for credential encryption
       - WORKLOG_ENC_KEY=${WORKLOG_ENC_KEY}
       - DATABASE_URL=sqlite:////app/data/worklog.db
@@ -22,6 +24,8 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8080}:80"
+    environment:
+      - TZ=Asia/Kolkata
     depends_on:
       - backend
 

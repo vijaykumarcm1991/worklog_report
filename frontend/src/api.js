@@ -8,9 +8,18 @@ async function request(path, options = {}) {
   })
   if (res.status === 204) return null
   const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  let data = null
+  try {
+    data = text ? JSON.parse(text) : null
+  } catch {
+    // Non-JSON body (e.g. an nginx error page while the backend is down)
+    if (!res.ok) throw new Error(`Request failed (${res.status} ${res.statusText || 'error'})`)
+    throw new Error('Unexpected response from server')
+  }
   if (!res.ok) {
-    throw new Error(typeof data?.detail === 'string' ? data.detail : `Request failed (${res.status})`)
+    let detail = data?.detail
+    if (Array.isArray(detail)) detail = detail.map((d) => d.msg).filter(Boolean).join('; ')
+    throw new Error(typeof detail === 'string' && detail ? detail : `Request failed (${res.status})`)
   }
   return data
 }
@@ -29,6 +38,8 @@ export const api = {
     request(`/instances/${instanceId}/users/search?q=${encodeURIComponent(q)}`),
   saveUser: (instanceId, user) =>
     request(`/instances/${instanceId}/users`, { method: 'POST', body: JSON.stringify(user) }),
+  setUserSelected: (instanceId, userId, selected) =>
+    request(`/instances/${instanceId}/users/${userId}`, { method: 'PUT', body: JSON.stringify({ selected }) }),
   deleteUser: (instanceId, userId) =>
     request(`/instances/${instanceId}/users/${userId}`, { method: 'DELETE' }),
 

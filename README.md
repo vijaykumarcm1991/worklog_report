@@ -113,4 +113,6 @@ The one abstraction (`app/jira.py`, `make_client` factory) keeps sync and the ca
 
 - Real connectivity depends on reaching your Jira instances from wherever this app runs (in Docker, the backend must reach your on-prem Jira host on its network).
 - On-prem Jira Server instances may require the API to be reachable over HTTP(s) from the container.
-- The calendar aggregates **worklog time by date**, comparing it against your daily target; no timezone shifting is applied between instances.
+- **Everything is IST (Asia/Kolkata).** Both Jira instances are IST, so worklog start times are stored exactly as Jira reports them, with no timezone conversion. Days, the sync window, the scheduler and the calendar's "today" all use IST. The Jira API account on each instance should have its profile timezone set to IST.
+- The calendar aggregates **worklog time by date**, comparing it against your daily target.
+- A sync replaces each user's worklogs inside the fetch window, so worklogs deleted in Jira disappear from the calendar on the next sync.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import icons from '../icons.jsx'
 
@@ -11,6 +11,7 @@ export default function UsersView() {
   const [searching, setSearching] = useState(false)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const searchSeq = useRef(0)
 
   const loadInstances = useCallback(async () => {
     const list = await api.listInstances()
@@ -24,25 +25,33 @@ export default function UsersView() {
 
   // Load saved users whenever the selected instance changes
   useEffect(() => {
-    if (!selectedInstance) {
-      setSaved([])
-      return
-    }
-    api.listUsers(selectedInstance).then(setSaved).catch((e) => setMsg(e.message))
+    // Drop the previous instance's search results right away so they can't
+    // be saved into the newly selected instance.
+    searchSeq.current++
+    setResults([])
+    setSaved([])
+    if (!selectedInstance) return
+    let cancelled = false
+    api.listUsers(selectedInstance)
+      .then((list) => { if (!cancelled) setSaved(list) })
+      .catch((e) => { if (!cancelled) setMsg(e.message) })
+    return () => { cancelled = true }
   }, [selectedInstance])
 
   const debouncedSearch = useCallback(async (q) => {
     if (!selectedInstance) return
+    // Ignore responses to older queries that arrive after newer ones.
+    const seq = ++searchSeq.current
     setSearching(true)
     setMsg('')
     setResults([])
     try {
       const r = await api.searchUsers(selectedInstance, q)
-      setResults(r)
+      if (seq === searchSeq.current) setResults(r)
     } catch (e) {
-      setMsg(e.message)
+      if (seq === searchSeq.current) setMsg(e.message)
     } finally {
-      setSearching(false)
+      if (seq === searchSeq.current) setSearching(false)
     }
   }, [selectedInstance])
 
@@ -71,8 +80,23 @@ export default function UsersView() {
 
   const remove = async (user) => {
     if (!confirm(`Remove ${user.display_name} from this instance?`)) return
-    await api.deleteUser(selectedInstance, user.id)
-    setSaved((s) => s.filter((x) => x.id !== user.id))
+    setMsg('')
+    try {
+      await api.deleteUser(selectedInstance, user.id)
+      setSaved((s) => s.filter((x) => x.id !== user.id))
+    } catch (e) {
+      setMsg(e.message)
+    }
+  }
+
+  const toggleSelected = async (user) => {
+    setMsg('')
+    try {
+      const updated = await api.setUserSelected(selectedInstance, user.id, !user.selected)
+      setSaved((s) => s.map((x) => (x.id === updated.id ? updated : x)))
+    } catch (e) {
+      setMsg(e.message)
+    }
   }
 
   const instance = instances.find((i) => String(i.id) === String(selectedInstance))
@@ -151,7 +175,7 @@ export default function UsersView() {
           <div className="card p-5">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Saved users ({saved.length})</h2>
-              <span className="text-xs text-slate-500">Only users shown here are reported in the calendar</span>
+              <span className="text-xs text-slate-500">Only included users are synced and shown in the calendar</span>
             </div>
             {saved.length === 0 ? (
               <div className="py-6 text-center text-sm text-slate-400">No users saved for this instance yet. Search and save above.</div>
@@ -172,7 +196,18 @@ export default function UsersView() {
                         <div className="truncate text-xs text-slate-500">{u.email || u.user_key}</div>
                       </div>
                     </div>
-                    <button className="btn-danger !py-1.5" onClick={() => remove(u)}>Remove</button>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs text-slate-400" title="Include in sync and calendar">
+                        <input
+                          type="checkbox"
+                          checked={u.selected}
+                          onChange={() => toggleSelected(u)}
+                          className="h-4 w-4 accent-brand-500"
+                        />
+                        Include
+                      </label>
+                      <button className="btn-danger !py-1.5" onClick={() => remove(u)}>Remove</button>
+                    </div>
                   </div>
                 ))}
               </div>

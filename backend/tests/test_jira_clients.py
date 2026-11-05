@@ -225,13 +225,29 @@ def test_auth_error_maps_to_jarrauth(monkeypatch):
     assert "Authentication failed" in msg
 
 
-def test_parse_iso_offset_variants():
+def test_parse_iso_keeps_ist_wall_clock():
     from app.jira import _parse_iso
 
-    d1 = _parse_iso("2024-01-15T10:00:00.000+0000")
-    d2 = _parse_iso("2024-01-15T10:00:00.000+00:00")
-    assert d1 == d2
+    # IST timestamps are kept exactly as reported: no conversion to UTC.
+    d1 = _parse_iso("2024-01-15T02:30:00.000+0530")
+    d2 = _parse_iso("2024-01-15T02:30:00.000+05:30")
+    assert d1 == d2 == dt.datetime(2024, 1, 15, 2, 30)
     assert d1.tzinfo is None
+    # Early-morning IST work stays on its own day.
+    assert d1.date() == dt.date(2024, 1, 15)
+    assert _parse_iso("2024-01-15T10:00:00Z") == dt.datetime(2024, 1, 15, 10, 0)
+
+
+def test_non_json_response_is_reported_not_raised(monkeypatch):
+    class HtmlResponse(FakeResponse):
+        def json(self):
+            raise ValueError("not json")
+
+    _patch(monkeypatch, HtmlResponse(200, None))
+    client = make_client(_make_instance("onprem", "http://jira.corp.local"), "pw")
+    ok, msg = client.test_connection()
+    assert ok is False
+    assert "non-JSON" in msg
 
 
 def test_comment_text_flattens_adf():

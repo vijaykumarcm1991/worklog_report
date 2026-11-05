@@ -49,13 +49,13 @@ def get_instance(instance_id: int, db: Session = Depends(get_db)):
 @router.put("/{instance_id}", response_model=schemas.InstanceRead)
 def update_instance(instance_id: int, payload: schemas.InstanceUpdate, db: Session = Depends(get_db)):
     inst = _get_instance_or_404(db, instance_id)
-    data = payload.model_dump(exclude_unset=True)
-    if "token" in data:
-        token = data.pop("token")
-        if token:
-            inst.token_enc = encrypt(token)
+    # Null means "leave unchanged"; it must never blank a required column.
+    data = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    token = data.pop("token", None)
+    if token:
+        inst.token_enc = encrypt(token)
     for field, value in data.items():
-        if field == "base_url" and value:
+        if field == "base_url":
             value = value.rstrip("/")
         setattr(inst, field, value)
     db.commit()
@@ -66,6 +66,10 @@ def update_instance(instance_id: int, payload: schemas.InstanceUpdate, db: Sessi
 @router.delete("/{instance_id}", status_code=204)
 def delete_instance(instance_id: int, db: Session = Depends(get_db)):
     inst = _get_instance_or_404(db, instance_id)
+    # Explicit, so nothing is left behind even on databases created before
+    # foreign keys were enforced.
+    db.query(models.Worklog).filter(models.Worklog.instance_id == instance_id).delete(synchronize_session=False)
+    db.query(models.User).filter(models.User.instance_id == instance_id).delete(synchronize_session=False)
     db.delete(inst)
     db.commit()
 

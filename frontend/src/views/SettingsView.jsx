@@ -19,8 +19,8 @@ export default function SettingsView() {
     setMsg('')
     setSaved(false)
     const value = parseFloat(hours)
-    if (isNaN(value) || value <= 0) {
-      setMsg('Daily target must be a positive number.')
+    if (isNaN(value) || value <= 0 || value > 24) {
+      setMsg('Daily target must be a number between 0 and 24.')
       return
     }
     try {

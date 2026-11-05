@@ -119,5 +119,9 @@ def delete_user(instance_id: int, user_id: int, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id, models.User.instance_id == instance_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    db.query(models.Worklog).filter(
+        models.Worklog.instance_id == instance_id,
+        models.Worklog.user_key == user.user_key,
+    ).delete(synchronize_session=False)
     db.delete(user)
     db.commit()
